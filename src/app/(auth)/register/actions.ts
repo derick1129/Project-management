@@ -7,7 +7,7 @@ import { hashPassword, passwordProblems } from "@/lib/auth/password";
 import { createSession, requestMeta } from "@/lib/auth/session";
 import { rateLimit } from "@/lib/rate-limit";
 import { registerTeam } from "@/lib/services/teams";
-import { MAX_TEAM_SIZE } from "@/lib/domain/constants";
+import { MAX_TEAM_SIZE, MINOR_PROJECT_TEAM_SIZE } from "@/lib/domain/constants";
 import { recordAudit } from "@/lib/services/audit";
 
 export interface RegisterState {
@@ -74,6 +74,18 @@ export async function registerTeamAction(_prev: RegisterState, formData: FormDat
         return { status: "error", message: `Member ${i}: ${memberParsed.error.issues[0]?.message}` };
       }
       members.push(memberParsed.data);
+    }
+
+    const projectType = await db.projectType.findUnique({
+      where: { id: parsed.data.projectTypeId },
+      select: { code: true },
+    });
+    const isMinor = projectType?.code === "MINOR" || projectType?.code?.startsWith("MINOR-");
+    if (isMinor && members.length !== MINOR_PROJECT_TEAM_SIZE - 1) {
+      return {
+        status: "error",
+        message: `Minor project teams must consist of exactly ${MINOR_PROJECT_TEAM_SIZE} students (1 team lead and ${MINOR_PROJECT_TEAM_SIZE - 1} members). Please fill in all member details.`,
+      };
     }
 
     const leadEmail = parsed.data.leadEmail.toLowerCase();

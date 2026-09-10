@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import { MAX_TEAM_SIZE } from "@/lib/domain/constants";
+import { MAX_TEAM_SIZE, MINOR_PROJECT_TEAM_SIZE } from "@/lib/domain/constants";
 import type { Principal } from "@/lib/auth/rbac";
 import { AuthorizationError, assertDepartment, isCollegeWide } from "@/lib/auth/rbac";
 import { recordAudit } from "@/lib/services/audit";
@@ -38,6 +38,7 @@ export interface RegisterTeamInput {
  * Registers a team on behalf of the team lead.
  *
  * Invariants enforced inside one transaction:
+ *  - exactly MINOR_PROJECT_TEAM_SIZE (4) students if project type is MINOR
  *  - at most MAX_TEAM_SIZE students including the lead
  *  - no student may hold two ACTIVE memberships (also guaranteed by the
  *    `TeamMember.activeStudentKey` unique index at the database level)
@@ -45,10 +46,6 @@ export interface RegisterTeamInput {
  *  - no Team ID is issued here; that happens only on approval
  */
 export async function registerTeam(principal: Principal, input: RegisterTeamInput) {
-  if (input.members.length + 1 > MAX_TEAM_SIZE) {
-    throw new DomainError(`A team may have at most ${MAX_TEAM_SIZE} students including the lead.`);
-  }
-
   const mentorFaculty = await db.facultyProfile.findFirst({
     where: { userId: input.mentorUserId },
     select: { departmentId: true },
@@ -56,6 +53,23 @@ export async function registerTeam(principal: Principal, input: RegisterTeamInpu
   if (!mentorFaculty) throw new DomainError("The selected mentor is not a registered faculty member.");
   if (mentorFaculty.departmentId !== input.departmentId) {
     throw new DomainError("The selected mentor belongs to a different department.");
+  }
+
+  const projectType = await db.projectType.findUnique({
+    where: { id: input.projectTypeId },
+    select: { code: true },
+  });
+  const totalStudents = input.members.length + 1;
+  const isMinor = projectType?.code === "MINOR" || projectType?.code?.startsWith("MINOR-");
+
+  if (isMinor && totalStudents !== MINOR_PROJECT_TEAM_SIZE) {
+    throw new DomainError(
+      `Minor project teams must consist of exactly ${MINOR_PROJECT_TEAM_SIZE} students (1 team lead and ${MINOR_PROJECT_TEAM_SIZE - 1} members).`,
+    );
+  }
+
+  if (totalStudents > MAX_TEAM_SIZE) {
+    throw new DomainError(`A team may have at most ${MAX_TEAM_SIZE} students including the lead.`);
   }
 
   return db.$transaction(async (tx) => {

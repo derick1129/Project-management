@@ -55,6 +55,11 @@ export function RegisterTeamForm({
     (c) => c.academicYearId === academicYearId && c.semesterId === semesterId,
   )?.projectTypeId;
 
+  const [selectedTypeId, setSelectedTypeId] = useState(mappedType ?? types[0]?.value ?? "");
+  const effectiveTypeId = mappedType ?? selectedTypeId;
+  const currentType = types.find((t) => t.value === effectiveTypeId);
+  const isMinor = currentType?.label.toLowerCase().includes("minor") ?? true;
+
   const departmentSections = sections.filter((s) => s.departmentId === departmentId);
   const departmentMentors = mentors.filter((m) => m.departmentId === departmentId);
 
@@ -147,7 +152,13 @@ export function RegisterTeamForm({
               required
               hint={mappedType ? "Pre-selected from your college's semester configuration." : undefined}
             >
-              <Select id="projectTypeId" name="projectTypeId" key={mappedType} defaultValue={mappedType} required>
+              <Select
+                id="projectTypeId"
+                name="projectTypeId"
+                value={effectiveTypeId}
+                onChange={(e) => setSelectedTypeId(e.target.value)}
+                required
+              >
                 {types.map((t) => (
                   <option key={t.value} value={t.value}>
                     {t.label}
@@ -195,16 +206,23 @@ export function RegisterTeamForm({
 
       {Array.from({ length: MAX_TEAM_SIZE - 1 }, (_, idx) => idx + 2).map((n) => (
         <Card key={n}>
-          <CardHeader title={`Member ${n}`} description="Leave blank if the team has fewer members." />
+          <CardHeader
+            title={`Member ${n}`}
+            description={
+              isMinor
+                ? "Required for Minor Projects (strictly 4 students per team: 1 lead + 3 members)."
+                : "Leave blank if the team has fewer members."
+            }
+          />
           <CardBody className="grid gap-4 sm:grid-cols-2">
-            <Field label="Full name" htmlFor={`member${n}Name`}>
-              <Input id={`member${n}Name`} name={`member${n}Name`} />
+            <Field label="Full name" htmlFor={`member${n}Name`} required={isMinor}>
+              <Input id={`member${n}Name`} name={`member${n}Name`} required={isMinor} />
             </Field>
-            <Field label="Enrollment number" htmlFor={`member${n}Enrollment`}>
-              <Input id={`member${n}Enrollment`} name={`member${n}Enrollment`} className="uppercase" />
+            <Field label="Enrollment number" htmlFor={`member${n}Enrollment`} required={isMinor}>
+              <Input id={`member${n}Enrollment`} name={`member${n}Enrollment`} className="uppercase" required={isMinor} />
             </Field>
-            <Field label="Email" htmlFor={`member${n}Email`}>
-              <Input id={`member${n}Email`} name={`member${n}Email`} type="email" />
+            <Field label="Email" htmlFor={`member${n}Email`} required={isMinor}>
+              <Input id={`member${n}Email`} name={`member${n}Email`} type="email" required={isMinor} />
             </Field>
             <Field label="Phone" htmlFor={`member${n}Phone`}>
               <Input id={`member${n}Phone`} name={`member${n}Phone`} type="tel" />

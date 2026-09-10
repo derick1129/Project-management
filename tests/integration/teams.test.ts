@@ -37,7 +37,7 @@ describe("teams service", () => {
   }
 
   describe("registerTeam", () => {
-    it("registers a team as SUBMITTED with no Team ID until approval", async () => {
+    it("registers a major team as SUBMITTED with no Team ID until approval", async () => {
       const mentor = await makeMentor();
       const lead = await makeLead();
 
@@ -47,7 +47,7 @@ describe("teams service", () => {
         departmentId: env.department.id,
         sectionId: env.section.id,
         semesterId: env.semester.id,
-        projectTypeId: env.minor.id,
+        projectTypeId: env.major.id,
         academicYearId: env.academicYear.id,
         mentorUserId: mentor.userId,
         leadStudentProfileId: lead.studentProfileId!,
@@ -64,6 +64,59 @@ describe("teams service", () => {
       });
       expect(withMembers.members).toHaveLength(1);
       expect(withMembers.members[0].isLead).toBe(true);
+    });
+
+    it("refuses a minor project team with fewer than 4 students", async () => {
+      const mentor = await makeMentor();
+      const lead = await makeLead();
+
+      await expect(
+        registerTeam(lead, {
+          projectTitle: "Understaffed Minor Project",
+          projectDescription: "A sufficiently long description of the project.",
+          departmentId: env.department.id,
+          sectionId: env.section.id,
+          semesterId: env.semester.id,
+          projectTypeId: env.minor.id,
+          academicYearId: env.academicYear.id,
+          mentorUserId: mentor.userId,
+          leadStudentProfileId: lead.studentProfileId!,
+          members: [],
+        }),
+      ).rejects.toThrow(/Minor project teams must consist of exactly 4 students/);
+    });
+
+    it("accepts a minor project team with exactly 4 students (1 lead + 3 members)", async () => {
+      const mentor = await makeMentor();
+      const lead = await makeLead();
+      const members = await Promise.all([makeLead(), makeLead(), makeLead()]);
+      const memberProfiles = await Promise.all(
+        members.map((m) => db.studentProfile.findUniqueOrThrow({ where: { id: m.studentProfileId! } })),
+      );
+
+      const team = await registerTeam(lead, {
+        projectTitle: "Valid Minor Project Team",
+        projectDescription: "A sufficiently long description of the project.",
+        departmentId: env.department.id,
+        sectionId: env.section.id,
+        semesterId: env.semester.id,
+        projectTypeId: env.minor.id,
+        academicYearId: env.academicYear.id,
+        mentorUserId: mentor.userId,
+        leadStudentProfileId: lead.studentProfileId!,
+        members: memberProfiles.map((p, i) => ({
+          name: `Member ${i + 2}`,
+          enrollmentNo: p.enrollmentNo,
+          email: `memval${i}-${lead.userId}@test.local`,
+        })),
+      });
+
+      expect(team.registrationStatus).toBe("SUBMITTED");
+      const withMembers = await db.team.findUniqueOrThrow({
+        where: { id: team.id },
+        include: { members: true },
+      });
+      expect(withMembers.members).toHaveLength(4);
     });
 
     it("refuses more than MAX_TEAM_SIZE students including the lead", async () => {
@@ -130,7 +183,7 @@ describe("teams service", () => {
           departmentId: env.department.id,
           sectionId: env.section.id,
           semesterId: env.semester.id,
-          projectTypeId: env.minor.id,
+          projectTypeId: env.major.id,
           academicYearId: env.academicYear.id,
           mentorUserId: mentor.userId,
           leadStudentProfileId: newLead.studentProfileId!,
@@ -160,7 +213,7 @@ describe("teams service", () => {
         departmentId: env.department.id,
         sectionId: env.section.id,
         semesterId: env.semester.id,
-        projectTypeId: env.minor.id,
+        projectTypeId: env.major.id,
         academicYearId: env.academicYear.id,
         mentorUserId: mentor.userId,
         leadStudentProfileId: lead1.studentProfileId!,
@@ -172,7 +225,7 @@ describe("teams service", () => {
         departmentId: env.department.id,
         sectionId: env.section.id,
         semesterId: env.semester.id,
-        projectTypeId: env.minor.id,
+        projectTypeId: env.major.id,
         academicYearId: env.academicYear.id,
         mentorUserId: mentor.userId,
         leadStudentProfileId: lead2.studentProfileId!,
@@ -201,7 +254,7 @@ describe("teams service", () => {
         departmentId: env.department.id,
         sectionId: env.section.id,
         semesterId: env.semester.id,
-        projectTypeId: env.minor.id,
+        projectTypeId: env.major.id,
         academicYearId: env.academicYear.id,
         mentorUserId: mentor.userId,
         leadStudentProfileId: lead.studentProfileId!,
@@ -224,7 +277,7 @@ describe("teams service", () => {
         departmentId: env.department.id,
         sectionId: env.section.id,
         semesterId: env.semester.id,
-        projectTypeId: env.minor.id,
+        projectTypeId: env.major.id,
         academicYearId: env.academicYear.id,
         mentorUserId: mentor.userId,
         leadStudentProfileId: lead.studentProfileId!,
@@ -245,7 +298,7 @@ describe("teams service", () => {
         departmentId: env.department.id,
         sectionId: env.section.id,
         semesterId: env.semester.id,
-        projectTypeId: env.minor.id,
+        projectTypeId: env.major.id,
         academicYearId: env.academicYear.id,
         mentorUserId: mentor.userId,
         leadStudentProfileId: lead.studentProfileId!,

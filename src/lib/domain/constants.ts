@@ -63,6 +63,7 @@ export const ACCURACY_BANDS = ["GOOD", "WARNING", "POOR"] as const;
 export type AccuracyBand = (typeof ACCURACY_BANDS)[number];
 
 export const MAX_TEAM_SIZE = 4;
+export const MINOR_PROJECT_TEAM_SIZE = 4;
 export const DISCUSSION_MAX_CHARS = 240;
 
 export const HEALTH_BANDS = [

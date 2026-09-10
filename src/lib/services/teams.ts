@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { MAX_TEAM_SIZE, MINOR_PROJECT_TEAM_SIZE } from "@/lib/domain/constants";
 import type { Principal } from "@/lib/auth/rbac";
-import { AuthorizationError, assertDepartment, isCollegeWide } from "@/lib/auth/rbac";
+import { AuthorizationError, assertCan, assertDepartment, isCollegeWide } from "@/lib/auth/rbac";
 import { recordAudit } from "@/lib/services/audit";
 import { notify } from "@/lib/services/notifications";
 
@@ -430,6 +430,148 @@ export async function updateTeam(principal: Principal, teamId: string, input: Up
     after: updated,
   });
   return updated;
+}
+
+export interface DirectAssignTeamInput {
+  projectTitle: string;
+  projectDescription: string;
+  departmentId: string;
+  sectionId?: string | null;
+  semesterId: string;
+  projectTypeId: string;
+  academicYearId: string;
+  mentorUserId: string;
+  leadStudentProfileId: string;
+  memberStudentProfileIds: string[]; // exactly 3 student profile IDs
+}
+
+/**
+ * Allows HODs and Project Coordinators to directly create, assign and activate
+ * a Minor Project team with 1 mentor and strictly 4 students (1 lead + 3 members).
+ */
+export async function assignMinorProjectTeam(principal: Principal, input: DirectAssignTeamInput) {
+  assertCan(principal, "team.write");
+  assertDepartment(principal, input.departmentId);
+
+  const totalStudents = 1 + input.memberStudentProfileIds.length;
+  if (totalStudents !== MINOR_PROJECT_TEAM_SIZE) {
+    throw new DomainError(
+      `Minor project teams must consist of exactly ${MINOR_PROJECT_TEAM_SIZE} students (1 team lead and ${MINOR_PROJECT_TEAM_SIZE - 1} members).`,
+    );
+  }
+
+  const mentorFaculty = await db.facultyProfile.findFirst({
+    where: { userId: input.mentorUserId },
+    select: { departmentId: true, user: { select: { name: true } } },
+  });
+  if (!mentorFaculty) throw new DomainError("The selected mentor is not a registered faculty member.");
+  if (mentorFaculty.departmentId !== input.departmentId) {
+    throw new DomainError("The selected mentor belongs to a different department.");
+  }
+
+  const allStudentIds = [input.leadStudentProfileId, ...input.memberStudentProfileIds];
+  if (new Set(allStudentIds).size !== allStudentIds.length) {
+    throw new DomainError("Duplicate students selected in the team assignment.");
+  }
+
+  const studentProfiles = await db.studentProfile.findMany({
+    where: { id: { in: allStudentIds } },
+    include: { user: { select: { id: true, name: true } } },
+  });
+  if (studentProfiles.length !== allStudentIds.length) {
+    throw new DomainError("One or more selected students could not be found.");
+  }
+  for (const sp of studentProfiles) {
+    if (sp.departmentId !== input.departmentId) {
+      throw new DomainError(`Student ${sp.user.name} (${sp.enrollmentNo}) belongs to a different department.`);
+    }
+  }
+
+  const clash = await db.teamMember.findFirst({
+    where: { studentId: { in: allStudentIds }, removedAt: null },
+    include: { student: true, team: { select: { teamId: true, projectTitle: true } } },
+  });
+  if (clash) {
+    throw new DomainError(
+      `${clash.student.enrollmentNo} is already an active member of ${clash.team.teamId ?? clash.team.projectTitle}. A student can belong to only one team.`,
+    );
+  }
+
+  return db.$transaction(async (tx) => {
+    const code = await nextTeamId(tx, input.departmentId, input.academicYearId);
+    const team = await tx.team.create({
+      data: {
+        teamId: code,
+        projectTitle: input.projectTitle,
+        projectDescription: input.projectDescription,
+        departmentId: input.departmentId,
+        sectionId: input.sectionId ?? null,
+        semesterId: input.semesterId,
+        projectTypeId: input.projectTypeId,
+        academicYearId: input.academicYearId,
+        mentorUserId: input.mentorUserId,
+        leadStudentId: input.leadStudentProfileId,
+        registrationStatus: "APPROVED",
+        status: "ACTIVE",
+        approvedAt: new Date(),
+        approvedByUserId: principal.userId,
+        members: {
+          create: [
+            {
+              studentId: input.leadStudentProfileId,
+              isLead: true,
+              activeStudentKey: input.leadStudentProfileId,
+            },
+            ...input.memberStudentProfileIds.map((sid) => ({
+              studentId: sid,
+              isLead: false,
+              activeStudentKey: sid,
+            })),
+          ],
+        },
+        timeline: {
+          create: {
+            kind: "APPROVED",
+            title: `Team created and assigned: ${code}`,
+            detail: `Directly created and assigned by ${principal.name} with mentor ${mentorFaculty.user.name}`,
+            actorUserId: principal.userId,
+          },
+        },
+      },
+      include: {
+        department: true,
+        mentor: true,
+        members: { include: { student: { include: { user: true } } } },
+      },
+    });
+
+    return team;
+  }, { timeout: 15000, maxWait: 5000 });
+
+  await notify(db, input.mentorUserId, {
+    kind: "TEAM_ASSIGNED",
+    title: `You have been assigned as mentor for ${team.teamId}`,
+    body: team.projectTitle,
+    link: `/teams/${team.id}`,
+  });
+
+  for (const sp of studentProfiles) {
+    await notify(db, sp.user.id, {
+      kind: "TEAM_ASSIGNED",
+      title: `You have been assigned to project ${team.teamId}`,
+      body: team.projectTitle,
+      link: `/teams/${team.id}`,
+    });
+  }
+
+  await recordAudit(principal, {
+    action: "ASSIGN_TEAM",
+    entity: "Team",
+    entityId: team.id,
+    summary: `Directly assigned team ${team.teamId} to mentor ${mentorFaculty.user.name} with 4 students`,
+  });
+
+  return team;
 }
 
 /** Prisma `where` fragment that limits team queries to the principal's reach. */

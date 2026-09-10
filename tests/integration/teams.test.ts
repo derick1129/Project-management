@@ -5,6 +5,7 @@ import { MAX_TEAM_SIZE } from "@/lib/domain/constants";
 import {
   addMember,
   approveRegistration,
+  assignMinorProjectTeam,
   DomainError,
   reassignMentor,
   registerTeam,
@@ -421,6 +422,86 @@ describe("teams service", () => {
       const { team } = await makeApprovedTeam(env, { mentor });
       const visible = await db.team.findMany({ where: teamScopeWhere(admin) });
       expect(visible.map((t) => t.id)).toContain(team.id);
+    });
+  });
+
+  describe("assignMinorProjectTeam", () => {
+    it("allows HOD to directly create and activate an approved team with 1 mentor and 4 students", async () => {
+      const hod = await makeUser({
+        roles: [{ role: "HOD", departmentId: env.department.id }],
+      });
+      const mentor = await makeMentor();
+      const lead = await makeLead();
+      const members = await Promise.all([makeLead(), makeLead(), makeLead()]);
+
+      const team = await assignMinorProjectTeam(hod, {
+        projectTitle: "Directly Assigned Minor Project",
+        projectDescription: "Project created directly by department coordinator or HOD.",
+        departmentId: env.department.id,
+        sectionId: env.section.id,
+        semesterId: env.semester.id,
+        projectTypeId: env.minor.id,
+        academicYearId: env.academicYear.id,
+        mentorUserId: mentor.userId,
+        leadStudentProfileId: lead.studentProfileId!,
+        memberStudentProfileIds: members.map((m) => m.studentProfileId!),
+      });
+
+      expect(team.registrationStatus).toBe("APPROVED");
+      expect(team.status).toBe("ACTIVE");
+      expect(team.teamId).toMatch(new RegExp(`^PIEMR-${env.department.code}-\\d{3}$`));
+
+      const memberRows = await db.teamMember.findMany({ where: { teamId: team.id } });
+      expect(memberRows).toHaveLength(4);
+      expect(memberRows.filter((m) => m.isLead)).toHaveLength(1);
+    });
+
+    it("refuses assignment if not exactly 4 students provided", async () => {
+      const hod = await makeUser({
+        roles: [{ role: "HOD", departmentId: env.department.id }],
+      });
+      const mentor = await makeMentor();
+      const lead = await makeLead();
+
+      await expect(
+        assignMinorProjectTeam(hod, {
+          projectTitle: "Understaffed Assigned Team",
+          projectDescription: "Should fail with fewer than 4 students.",
+          departmentId: env.department.id,
+          sectionId: env.section.id,
+          semesterId: env.semester.id,
+          projectTypeId: env.minor.id,
+          academicYearId: env.academicYear.id,
+          mentorUserId: mentor.userId,
+          leadStudentProfileId: lead.studentProfileId!,
+          memberStudentProfileIds: [],
+        }),
+      ).rejects.toThrow(/Minor project teams must consist of exactly 4 students/);
+    });
+
+    it("refuses assignment from an unauthorized user or different department", async () => {
+      const otherEnv = await buildAcademicEnvironment();
+      const outsideHod = await makeUser({
+        roles: [{ role: "HOD", departmentId: otherEnv.department.id }],
+      });
+      const mentor = await makeMentor();
+      const lead = await makeLead();
+      const members = await Promise.all([makeLead(), makeLead(), makeLead()]);
+
+      await expect(
+        assignMinorProjectTeam(outsideHod, {
+          projectTitle: "Cross Department Assignment",
+          projectDescription: "Should fail authorization.",
+          departmentId: env.department.id,
+          sectionId: env.section.id,
+          semesterId: env.semester.id,
+          projectTypeId: env.minor.id,
+          academicYearId: env.academicYear.id,
+          mentorUserId: mentor.userId,
+          leadStudentProfileId: lead.studentProfileId!,
+          memberStudentProfileIds: members.map((m) => m.studentProfileId!),
+        }),
+      ).rejects.toThrow(AuthorizationError);
     });
   });
 });

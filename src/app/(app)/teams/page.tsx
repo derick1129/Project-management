@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { requirePrincipal } from "@/lib/auth/session";
 import { guard } from "@/lib/auth/page-guard";
+import { can } from "@/lib/auth/rbac";
 
 import { db } from "@/lib/db";
 import { teamScopeWhere } from "@/lib/services/teams";
 import { computeTeamMetrics } from "@/lib/services/analytics";
 import {
+  ButtonLink,
   Card,
   CardHeader,
   EmptyState,
@@ -92,6 +94,11 @@ export default async function TeamsPage({
       <PageHeader
         title="Projects"
         description="Every registered Minor and Major project within your scope."
+        action={
+          can(principal, "team.write") ? (
+            <ButtonLink href="/teams/assign">Assign Minor Project</ButtonLink>
+          ) : undefined
+        }
       />
 
       <FilterBar

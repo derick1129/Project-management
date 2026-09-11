@@ -497,7 +497,7 @@ export async function assignMinorProjectTeam(principal: Principal, input: Direct
     );
   }
 
-  return db.$transaction(async (tx) => {
+  const team = await db.$transaction(async (tx) => {
     const code = await nextTeamId(tx, input.departmentId, input.academicYearId);
     const team = await tx.team.create({
       data: {

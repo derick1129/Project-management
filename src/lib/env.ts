@@ -13,6 +13,12 @@ const schema = z.object({
   STORAGE_PUBLIC_BASE: z.string().default("/api/files"),
   SEED_PASSWORD: z.string().default("Piemr@2026"),
 
+  // Institution customization (optional — defaults to PIEMR)
+  COLLEGE_NAME: z.string().optional(),
+  COLLEGE_CODE: z.string().optional(),
+  NEXT_PUBLIC_COLLEGE_NAME: z.string().optional(),
+  NEXT_PUBLIC_COLLEGE_CODE: z.string().optional(),
+
   // Footer credit line — deliberately NOT hardcoded in source. Real names,
   // titles, emails and LinkedIn URLs belong only in a deployer's own local
   // .env (which .gitignore keeps out of version control), never committed.

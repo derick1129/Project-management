@@ -9,6 +9,7 @@ export interface StampFacts {
   accuracyM: number;
   address: string | null;
   capturedAt: Date;
+  institutionName?: string | null;
 }
 
 function escapeXml(value: string): string {
@@ -75,6 +76,12 @@ export async function stampEvidence(original: Buffer, facts: StampFacts): Promis
   const boxHeight = pad * 2 + title + rows.length * line + Math.round(line * 0.4);
   const boxTop = height - boxHeight;
 
+  const institution =
+    facts.institutionName ||
+    process.env.NEXT_PUBLIC_COLLEGE_NAME ||
+    process.env.COLLEGE_NAME ||
+    "PIEMR";
+
   const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="scrim" x1="0" y1="0" x2="0" y2="1">
@@ -97,7 +104,7 @@ export async function stampEvidence(original: Buffer, facts: StampFacts): Promis
     .join("\n  ")}
   <text x="${width - pad}" y="${boxTop + pad + title * 0.8}" text-anchor="end"
         font-family="DejaVu Sans, Arial, sans-serif" font-size="${small}" fill="#9db4d8">
-    PIEMR · Official Project Meeting Evidence
+    ${escapeXml(institution)} · Official Project Meeting Evidence
   </text>
 </svg>`;
 

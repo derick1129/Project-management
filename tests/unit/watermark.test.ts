@@ -88,4 +88,23 @@ describe("stampEvidence", () => {
       }),
     ).resolves.toBeInstanceOf(Buffer);
   });
+
+  it("stamps evidence with a custom institution name when specified", async () => {
+    const original = await samplePhoto();
+    const stamped = await stampEvidence(original, {
+      teamId: "CSE-005",
+      projectTitle: "Minor Project Work",
+      mentorName: "Prof. Sharma",
+      latitude: 28.6139,
+      longitude: 77.209,
+      accuracyM: 12,
+      address: "Main Academic Block",
+      capturedAt: new Date("2026-09-08T10:00:00Z"),
+      institutionName: "National Engineering Institute",
+    });
+
+    const meta = await sharp(stamped).metadata();
+    expect(meta.format).toBe("jpeg");
+    expect(stamped.byteLength).toBeGreaterThan(0);
+  });
 });
